@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# SUDO ACCESS REQUIRED
+if [[ ${EUID} > 0 ]]; then
+    cl 1 "Please use sudo or run as root.\n"
+    exit 1
+fi
+
+# Get the script name
+PRG_NAME=`basename $0`
+
+# Helper function: coloring output 
+cl() {
+    if [[ "${1}" != "-" ]]; then 
+	tput setaf "${1}"
+	[ "${3:-}" == "1" ] && tput bold
+	printf "${2}"
+	tput sgr0
+    else
+	printf "${2}"
+    fi
+}
+
+
+# Usage detail
+usage() {
+    cat <<EOF
+`cl 3 usage:`
+`cl 6 " ${PRG_NAME} ";    cl 7 "[ -a | --authorize <user@host> ]"; cl 7 "[ -h | --help ]"`
+`cl 6 " %${#PRG_NAME}s "; cl 7 "[ -k | --keygen <type> ]"; cl 7 "[ --bits <bits> ]"; cl 7 "[ -n | --name <name> ]"`
+`cl 6 " %${#PRG_NAME}s "; cl 7 "[ -q | --quiet ]"; cl 7 "[ -v | --verbose ]"`
+
+`cl 3 descriptions:`
+`cl 7 " A script to automate setting up hostname, generate ssh key and add authorized key quickly all at once."`
+
+`cl 3 options:`
+`cl 6 " -a, --authorize"; cl 7 " <user@host> "; cl 7 "Add an authorized key via ssh-copy-id."`
+`cl 6 " -h, --help     "; cl - "             "; cl 7 "Show this usage menu."`
+`cl 6 " -k, --keygen   "; cl 7 " <type>      "; cl 7 "Generate ssh keys via ssh-kegen. Types: dsa, dcdsa, ed25519, rsa."`
+`cl 6 "     --bits     "; cl 7 " <bits>      "; cl 7 "Optional: Specify <bits> for rsa or ecdsa keys."`
+`cl - "                "; cl - "             "; cl 7 "See examples section below for more detail."`
+`cl 6 " -n, --name     "; cl 7 " <name>      "; cl 7 "Setup a new hostname via hostnamectl and /etc/hosts file."`
+`cl - "                "; cl - "             "; cl 7 "If cloud-init is setup, /etc/cloud/cloud.cfg file will be modified."`
+`cl 6 " -q, --quiet    "; cl - "             "; cl 7 "Run in quiet mode."`
+`cl 6 " -v, --verbose  "; cl - "             "; cl 7 "Run in verbose mode."`
+
+`cl 3 examples:`
+`cl 6 " - Setup hostname."`
+`cl 2 "   ./${PRG_NAME} -n new_hostname"`
+`cl 2 "   ./${PRG_NAME} --name new_hostname"`
+
+`cl 6 " - Generate ssh key. Key will be placed in the ~/.ssh dir, with default settings."`
+`cl 6 "   Returns the public key after success (except when -q option is used)."`
+`cl 7 "   Create rsa key."`
+`cl 2 "   ./${PRG_NAME} -k rsa"`
+`cl 7 "   Create ecdsa key and specify a bit size"`
+`cl 2 "   ./${PRG_NAME} --keygen ecdsa --bits 521"`
+`cl 7 "   Create dsa key."`
+`cl 2 "   ./${PRG_NAME} -k dsa"`
+
+`cl 6 " - Add an authorize key"`
+`cl 2 "   ./${PRG_NAME} -a john@123.234.345.456"`
+
+`cl 6 " - Use all options at once"`
+`cl 2 "   ./${PRG_NAME} -a john@123.234.345.456 -k ecdsa --bits 521 -n some_server"`
+EOF
+    [ -z $1 ] && exit 1 || exit $1
+}
+
+
+# Handling the arguments
+A_FLG=''
+K_BITS=''
+K_FILE=''
+K_TYPE=''
+N_FLG=''
+Q_FLG=''
+V_FLG=0
+BOTH_QV_FLG_ERR=$(cl 2 "Error, both --quiet and --verbose flags given. Please use one or the other.")
+
+# Note the use of "$@" to let each command-line parameter expand to a
+# separate word. The quotes around "$@" are essential!
+# Need TEMP as the 'eval set --' would nuke the return value of getopt.
+# Followed 'getopt' example from /usr/share/doc/util-linux/examples/getopt-parse.bash
+TEMP=$(getopt -n "${PRG_NAME}" -o 'a:hk:n:qv' -l 'authorize:,help,keygen:,bits:,name:,quiet,verbose' -- "$@")   
+
+# If getopt returns with non-zero exit code
+if [ $? -ne 0 ]; then
+    usage $?
+fi
+
+# Note the quotes around "$TEMP": they are essential!
+eval set -- "$TEMP"
+unset TEMP
+
+while true; do
+    case "$1" in
+	'-a' | '--authorize')
+	    A_FLG="${2}"
+	    shift 2
+	    continue ;;
+	'-h' | '--help')
+	    usage 0
+	    break ;;
+	'-k' | '--keygen')
+	    K_TYPE="${2}"
+	    mkdir -p ${HOME}/.ssh
+	    K_FILE="${HOME}/.ssh/id_${K_TYPE}"
+	    shift 2
+	    continue ;;
+	'--bits')
+	    K_BITS="${2}"
+	    shift 2
+	    continue ;;
+	'-n' | '--name')
+	    N_FLG="${2}"
+	    shift 2
+	    continue ;;
+	'-q' | '--quiet')
+	    if [ "${V_FLG}" -eq 0 ]; then
+		Q_FLG="true"
+	    else
+		echo $BOTH_QV_FLG_ERR
+		exit 1
+	    fi
+	    shift
+	    continue ;;
+	'-v' | '--verbose')
+	    if [ -z "${Q_FLG}" ]; then
+		V_FLG=$(( V_FLG + 1 ))
+	    else
+		echo $BOTH_QV_FLG_ERR
+		exit 1
+	    fi
+	    shift
+	    continue ;;
+	'--')
+	    shift
+	    break ;;
+	*)
+	   cl 2 "Internal error!"
+	   exit 1 ;;
+    esac
+done
+
+echo "- - - - - -  - VAR display - - - - -  -"
+echo "${A_FLG}"
+echo "${K_BITS}"
+echo "${K_FILE}"
+echo "${K_TYPE}"
+echo "${N_FLG}"	
+echo "${Q_FLG}"	
+echo "${V_FLG}"
+echo "- - - - - -  - VAR display - - - - -  -"
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    
