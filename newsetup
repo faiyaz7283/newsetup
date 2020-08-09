@@ -1,169 +1,437 @@
 #!/usr/bin/env bash
+
+# Set script to follow strict rules.
+# The set command have multiple use cases. Please see the link to understand all
+# use cases: gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
+#
+# NOTE: '-' before options means to turn on that feature while a '+' means to
+# turn off that feature.
+#
+# Some useful options:
+# -e          Exit script immediately when a command hits non-zero status. 
+# -u          Using unset variables will error and immediately exit the script.
+# -x          Debugger mode. 
+# -o pipefail By default, the return status of the last command in a pipeline is
+#             returned. With this option set, any non-zero return status from
+#             within the pipeline will be returned.
 set -euo pipefail
 
-# SUDO ACCESS REQUIRED
-if [[ ${EUID} > 0 ]]; then
-    cl 1 "Please use sudo or run as root.\n"
+#-------------------------------------------------------------------------------
+# Variables
+#-------------------------------------------------------------------------------
+
+flg_k_type=""
+flg_k_args=( )
+flg_n_hostname=""
+flg_n_args=( )
+dry_run=0
+quiet=""
+verbose=0
+vq_err_msg="Error, both -q and -v flags given. Please use one or the other."
+
+# IMPORTANT:
+# Mac uses the BSD getopt by default - which is a separate program than the GNU
+# getopt used here.  In order for this script to work on Mac OS - make sure the
+# getopt points to a GNU getopt instead of BSD.
+# brew install gnu-getopt and follow onscreen instruction for correct setup.
+opts_long="bits:,dry-run,help,keygen:,name:,quiet,verbose"
+opts_short="hk:n:qv"
+prg_name=$(basename "$0")
+temp=$(getopt -n "${prg_name}" -l "$opts_long" -o "$opts_short" -- "${@:-}")   
+
+# switch temp -> $@ (positional arguments) and destroy the temp var.
+#
+# NOTE:
+# set -- "${temp}" will retain quotes around each separate values from $temp. For
+# ex '"-h"' '"-v"'. To get around this, the eval command is used to execute the
+# set command, which will honor the quotes, but won't assume they are part of
+# the value, so this '"-h"' '"-v"', with eval would turn to this -h -v.
+eval set -- "${temp}" && unset temp
+
+#-------------------------------------------------------------------------------
+# Functions
+#-------------------------------------------------------------------------------
+
+################################################################################
+# Allow ability to add colors to output.
+# Helpful: tput basic color guide
+# 0 = black, 1 = red, 2 = green, 3 = yellow
+# 4 = blue, 5 = magenta, 6 = cyan, 7 = white
+# More info and help with colors: unix.stackexchange.com/questions/269077
+#
+# Arguments:
+#   1 <number|hyphen>     Any number from 0-7, or higher based on terminal.
+#   2 <string>
+#   3 <number> (optional) Set it to 1 to add boldness to string.
+# Outputs:
+#   Prints colored or non-color string onto stdout.
+################################################################################
+_cl() {
+  # Declare and assign separately to avoid masking return values
+  local cl_output
+  cl_output=$([[ $(tput colors) -ge 8 ]] && echo 1 || echo 0)
+  local strng="${2}"
+  local s="%s"
+
+  if [[ $strng == *"\n" ]]; then
+    # removes the last 2 characters from the $strng
+    strng="${strng%??}"
+    s="${s}\n"
+  fi
+  
+  if [[ $cl_output -eq 0 || $1 == "-" ]]; then
+    printf "$s" "${strng}"
+  else
+    tput setaf "$1"
+    [[ ${3:-} == "1" ]] && tput bold
+    printf "$s" "${strng}"
+    tput sgr0
+  fi
+}
+
+################################################################################
+# Add any combination of color and string.
+#
+# Arguments:
+#   1 <number|hyphen>
+#   2 <string>
+#   ...
+# Outputs:
+#   Writes to stdout
+# Returns:
+#    Exit status 1, if uneven number of arguments given.
+################################################################################
+_cl_multi() {
+  count=$#
+  
+  if [[ $(( count % 2 )) -ne 0 ]]; then
+    err "Only even number of arguments is valid, $count was given."
     exit 1
-fi
+  fi
 
-# Get the script name
-PRG_NAME=`basename $0`
+  while [[ $count -gt 0 ]]; do
+    _cl "$1" "${2}"
+    shift 2
+    (( count-=2 ))
+  done
+}
 
-# Helper function: coloring output 
-cl() {
-    if [[ "${1}" != "-" ]]; then 
-	tput setaf "${1}"
-	[ "${3:-}" == "1" ] && tput bold
-	printf "${2}"
-	tput sgr0
-    else
-	printf "${2}"
+################################################################################
+# Log error message, include timestamp, function name and line number when
+# verbose is set.
+#
+# Globals:
+#   FUNCNAME    Using the FUNCNAME[1] to get the last function from stack.
+#   BASH_LINENO Using the BASH_LINENO[0] to get the error line number.
+#   verbose       
+# Arguments:
+#   1 <string>  The custom error message.
+# Outputs:
+#   Writes to stderr
+################################################################################
+err() {
+  dt="[$(date +'%Y-%m-%dT%H:%M:%S%z')]"
+  fn_ln="[${FUNCNAME[1]}:${BASH_LINENO[0]}]"  
+  detail_msg=$(_cl_multi 7 "${dt}" 3 "${fn_ln}" 1 "${1}")
+  msg=$(_cl 1 "${1}")
+  if [[ $verbose -gt 0 ]]; then
+    print_line  "${detail_msg}" >&2
+  else
+    print_line "${msg}" >&2
+  fi
+}
+
+################################################################################
+# Generate ssh keys using the ssh-keygen program. By default will use the
+# $HOME/.ssh directory to place the keys. If the directory doesn't exist, it will
+# be created. Key name will be id_${type} and passphrase will be empty. 
+#
+# Globals:
+#   HOME   
+#   flg_k_type 
+#   flg_k_args 
+# Outputs:
+#   Print output from ssh-keygen and mkdir to stdout. When -q flag is present 
+#   Prints to stdout directly from ssh-keygen when -q flag is not given.
+################################################################################
+generate_key() {
+  if [[ -z $flg_k_type ]]; then
+    err "Missing ssh key type. Use -k or --key flag to set one."
+    exit 1
+  fi
+
+  local cmds=( )
+
+  # Setup the file name
+  ssh_dir="${HOME}/.ssh_test"
+  key_file="${ssh_dir}/id_${flg_k_type}"
+
+  print_heading "Generating ssh keys via ssh-keygen..."
+
+  # Make sure the file doesn't already exist
+  if [[ -f ${key_file} ]]; then
+    print_line "${flg_k_type} key already exist, doing nothing."
+  else
+    # Make sure the .ssh dir exist
+    if [[ ! -d ${ssh_dir} ]]; then
+      cmds+=("mkdir -p ${ssh_dir}")
     fi
+
+    # Add -f file and add -N flag to prevent passphrase prompt
+    cmds+=("ssh-keygen ${flg_k_args[*]} -f ${key_file} -N \"\"")
+    run_cmds "${cmds[@]}"
+  fi
 }
 
+################################################################################
+# Print v's totaling the number represented by verbose.
+#
+# Globals:
+#   verbose
+# Outputs:
+#   Prints out v's using total number of verbose present.
+################################################################################
+get_verbose() {
+  if [[ $verbose -gt 0 ]]; then
+    printf 'v%.0s' $(seq $verbose)
+  fi
+}
 
-# Usage detail
+################################################################################
+# Print in group to stdout, unless --quiet mode is present. This function does
+# not end with new line. To add new line, pass a new line character at end.
+#
+# Globals:
+#   quiet
+# Arguments:
+#   1 <string>
+#   @ <number|hyphen|string> (optional) Same as cl_multi()
+# Outputs:
+#   Writes to stdout with no new line at the end.
+################################################################################
+print_group() {
+  if [[ -z $quiet ]]; then
+    count=$#
+    
+    if [[ $count -eq 1 ]]; then
+      _cl - "${1}"
+    else
+      _cl_multi "${@}"
+    fi    
+  fi
+}
+
+################################################################################
+# Print a heading to stdout, unless --quiet mode is present.
+#
+# Arguments:
+#   1 <string>
+# Outputs:
+#   Writes to stdout with new line at the end.
+################################################################################
+print_heading() {
+  print_group 3 "${1}\n"
+}
+
+################################################################################
+# Print a single message line to stdout, unless --quiet mode is present.
+#
+# Arguments:
+#   1 <string>
+#   @ <number|hyphen|string> (optional) Same as cl_multi()
+# Outputs:
+#   Writes to stdout with no new line at the end.
+################################################################################
+print_line() {
+  print_group "${@}\n"
+}
+
+################################################################################
+# Loops through and executes commands one at a time. If dry_run is set, then
+# only prints out the commands.
+#
+# Globals:
+#   dry_run
+#   quiet
+# Arguments:
+#   * <string> String or strings containing commands to run.
+# Outputs:
+#   Reports command outputs. If dry-run, then only echoes the command(s).
+################################################################################
+run_cmds() {
+  for cmd in "${@}"; do
+    if [[ $dry_run -eq 0 ]]; then
+      print_group 5 "running: " 4 "$cmd"
+      if eval "${cmd} &>/dev/null"; then
+	print_line 2 " [ok]"
+      else
+	print_line 1 " [fail]"
+      fi
+    else
+      print_group 5 "dry-run: " 4 "$cmd"
+      print_line 2 " [ok]"
+    fi
+  done
+}
+
+################################################################################
+# Set machine hostname.
+#
+# Globals:
+#   flg_n_hostname
+# Outputs:
+#   Prints output from program to set hostname.
+# Returns:
+#   Exit status 1 if the flg_n_hostname is missing, or unable to find a suitable
+#   program to set hostname.
+################################################################################
+set_hostname() {
+  if [[ -z $flg_n_hostname ]]; then
+    err "Missing name for hostname. Use -n or --name flag to set one."
+    exit 1
+  fi
+  
+  local cmds=( )
+  if command -v hostnamectl &> /dev/null; then
+    # linux
+    print_heading "Setting up hostname via hostnamectl..."
+    cmds+=("sudo hostnamectl set-hostname ${flg_n_hostname}")
+  elif command -v scutil &> /dev/null; then
+    # osx
+    print_heading "Setting up hostname via scutil..."
+    cmds+=("sudo scutil --set ComputerName ${flg_n_hostname}")
+    cmds+=("sudo scutil --set LocalHostName ${flg_n_hostname}")
+    cmds+=("sudo scutil --set HostName ${flg_n_hostname}")
+  else
+    err "Unable to find a program to change computer Hostname."
+    exit 1
+  fi
+
+  run_cmds "${cmds[@]}"
+}
+
+################################################################################
+# Print the help menu using HEREDOC and cat to capture multi-line string and
+# preserve white space.
+#
+# Arguments:
+#   1 <number> Exit status code.
+# Outputs:
+#   Prints out the Usage menu.
+# Returns:
+#   1 by default, or the status code passed by argument 1.
+################################################################################
 usage() {
-    cat <<EOF
-`cl 3 usage:`
-`cl 6 " ${PRG_NAME} ";    cl 7 "[ -a | --authorize <user@host> ]"; cl 7 "[ -h | --help ]"`
-`cl 6 " %${#PRG_NAME}s "; cl 7 "[ -k | --keygen <type> ]"; cl 7 "[ --bits <bits> ]"; cl 7 "[ -n | --name <name> ]"`
-`cl 6 " %${#PRG_NAME}s "; cl 7 "[ -q | --quiet ]"; cl 7 "[ -v | --verbose ]"`
+  name_gaps="$(printf "%${#prg_name}s")"
+  cat << EOS
+$(print_group 3 "usage:")
+$(print_group - " ${prg_name} " 6 "[ -h | --help ] [ -k | --keygen <type> ]")
+$(print_group - " $name_gaps " 6 "[ --bits <bits> ] [ -n | --name <name> ]")
+$(print_group - " $name_gaps " 6 "[ -q | --quiet ] [ -v | --verbose ]")
+$(print_group - " $name_gaps " 6 "[ --dry-run ]")
 
-`cl 3 descriptions:`
-`cl 7 " A script to automate setting up hostname, generate ssh key and add authorized key quickly all at once."`
+$(print_group 3 descriptions:)
+$(print_group - " A script to automate setting up hostname and generate ssh key.")
 
-`cl 3 options:`
-`cl 6 " -a, --authorize"; cl 7 " <user@host> "; cl 7 "Add an authorized key via ssh-copy-id."`
-`cl 6 " -h, --help     "; cl - "             "; cl 7 "Show this usage menu."`
-`cl 6 " -k, --keygen   "; cl 7 " <type>      "; cl 7 "Generate ssh keys via ssh-kegen. Types: dsa, dcdsa, ed25519, rsa."`
-`cl 6 "     --bits     "; cl 7 " <bits>      "; cl 7 "Optional: Specify <bits> for rsa or ecdsa keys."`
-`cl - "                "; cl - "             "; cl 7 "See examples section below for more detail."`
-`cl 6 " -n, --name     "; cl 7 " <name>      "; cl 7 "Setup a new hostname via hostnamectl and /etc/hosts file."`
-`cl - "                "; cl - "             "; cl 7 "If cloud-init is setup, /etc/cloud/cloud.cfg file will be modified."`
-`cl 6 " -q, --quiet    "; cl - "             "; cl 7 "Run in quiet mode."`
-`cl 6 " -v, --verbose  "; cl - "             "; cl 7 "Run in verbose mode."`
+$(print_group 3 options:)
+$(print_group 5 " -h, --help     " - "        " - "Show this usage menu.")
+$(print_group 5 " -k, --keygen   " 5 " <type> " - "Generate ssh keys via ssh-kegen. Types: dsa, ecdsa, ed25519, rsa.")
+$(print_group 5 "     --bits     " 5 " <bits> " - "Optional: Specify <bits> for rsa or ecdsa keys.")
+$(print_group - "                " - "        " - "See examples section below for more detail.")
+$(print_group 5 " -n, --name     " 5 " <name> " - "Setup a new hostname via hostnamectl and /etc/hosts file.")
+$(print_group - "                " - "        " - "If print_groupoud-init is setup, /etc/print_groupoud/print_groupoud.cfg file will be modified.")
+$(print_group 5 " -q, --quiet    " - "        " - "Silence all output.")
+$(print_group 5 " -v, --verbose  " - "        " - "Increase verbosity by adding one or more. Up to 4 is allowed.")
+$(print_group 5 "     --dry-run  " - "        " - "Dry-run mode to safely test what will be executed.")
 
-`cl 3 examples:`
-`cl 6 " - Setup hostname."`
-`cl 2 "   ./${PRG_NAME} -n new_hostname"`
-`cl 2 "   ./${PRG_NAME} --name new_hostname"`
+$(print_group 3 examples:)
+$(print_group 6 " - Generate ssh key. Key will be placed in the ~/.ssh dir, with default settings.")
+$(print_group 6 "   Prints the public key on stdout after success (except when -q option is used).")
+$(print_group 7 "   Create rsa key.")
+$(print_group 2 "   ./${prg_name} -k rsa")
+$(print_group 7 "   Create ecdsa key and specify a bit size")
+$(print_group 2 "   ./${prg_name} --keygen ecdsa --bits 521")
+$(print_group 7 "   Create dsa key.")
+$(print_group 2 "   ./${prg_name} -k dsa")
 
-`cl 6 " - Generate ssh key. Key will be placed in the ~/.ssh dir, with default settings."`
-`cl 6 "   Returns the public key after success (except when -q option is used)."`
-`cl 7 "   Create rsa key."`
-`cl 2 "   ./${PRG_NAME} -k rsa"`
-`cl 7 "   Create ecdsa key and specify a bit size"`
-`cl 2 "   ./${PRG_NAME} --keygen ecdsa --bits 521"`
-`cl 7 "   Create dsa key."`
-`cl 2 "   ./${PRG_NAME} -k dsa"`
+$(print_group 6 " - Setup hostname.")
+$(print_group 2 "   ./${prg_name} -n new_hostname")
+$(print_group 2 "   ./${prg_name} --name new_hostname")
 
-`cl 6 " - Add an authorize key"`
-`cl 2 "   ./${PRG_NAME} -a john@123.234.345.456"`
+$(print_group 6 " - Use all options at once.")
+$(print_group 2 "   ./${prg_name} -k ecdsa --bits 521 -n some_server")
 
-`cl 6 " - Use all options at once"`
-`cl 2 "   ./${PRG_NAME} -a john@123.234.345.456 -k ecdsa --bits 521 -n some_server"`
-EOF
-    [ -z $1 ] && exit 1 || exit $1
+$(print_group 6 " - Use dry-run.")
+$(print_group 2 "   ./${prg_name} -k rsa --bits 3072 -n some_server --dry-run")
+EOS
+  # This help menu generally presented due to user error or misuse of the
+  # program.  So return exit 1 status by default. Also allow the ability to
+  # change the exit status in situation when the help menu is called correctly.
+  [[ -z $1 ]] && exit 1 || exit "$1"
 }
 
-
-# Handling the arguments
-A_FLG=''
-K_BITS=''
-K_FILE=''
-K_TYPE=''
-N_FLG=''
-Q_FLG=''
-V_FLG=0
-BOTH_QV_FLG_ERR=$(cl 2 "Error, both --quiet and --verbose flags given. Please use one or the other.")
-
-# Note the use of "$@" to let each command-line parameter expand to a
-# separate word. The quotes around "$@" are essential!
-# Need TEMP as the 'eval set --' would nuke the return value of getopt.
-# Followed 'getopt' example from /usr/share/doc/util-linux/examples/getopt-parse.bash
-TEMP=$(getopt -n "${PRG_NAME}" -o 'a:hk:n:qv' -l 'authorize:,help,keygen:,bits:,name:,quiet,verbose' -- "$@")   
-
-# If getopt returns with non-zero exit code
-if [ $? -ne 0 ]; then
-    usage $?
-fi
-
-# Note the quotes around "$TEMP": they are essential!
-eval set -- "$TEMP"
-unset TEMP
-
+#-------------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------------
 while true; do
-    case "$1" in
-	'-a' | '--authorize')
-	    A_FLG="${2}"
-	    shift 2
-	    continue ;;
-	'-h' | '--help')
-	    usage 0
-	    break ;;
-	'-k' | '--keygen')
-	    K_TYPE="${2}"
-	    mkdir -p ${HOME}/.ssh
-	    K_FILE="${HOME}/.ssh/id_${K_TYPE}"
-	    shift 2
-	    continue ;;
-	'--bits')
-	    K_BITS="${2}"
-	    shift 2
-	    continue ;;
-	'-n' | '--name')
-	    N_FLG="${2}"
-	    shift 2
-	    continue ;;
-	'-q' | '--quiet')
-	    if [ "${V_FLG}" -eq 0 ]; then
-		Q_FLG="true"
-	    else
-		echo $BOTH_QV_FLG_ERR
-		exit 1
-	    fi
-	    shift
-	    continue ;;
-	'-v' | '--verbose')
-	    if [ -z "${Q_FLG}" ]; then
-		V_FLG=$(( V_FLG + 1 ))
-	    else
-		echo $BOTH_QV_FLG_ERR
-		exit 1
-	    fi
-	    shift
-	    continue ;;
-	'--')
-	    shift
-	    break ;;
-	*)
-	   cl 2 "Internal error!"
-	   exit 1 ;;
-    esac
+  case "$1" in
+    '--dry-run')
+      dry_run=1
+      shift
+      continue ;;
+    '--bits')
+      flg_k_args+=("-b ${2}")
+      shift 2
+      continue ;;
+    '-h' | '--help')
+      usage 0
+      break ;;
+    '-k' | '--keygen')
+      flg_k_type="${2}"
+      if ! [[ $flg_k_type =~ ^(dsa|ecdsa|ed25519|rsa)$ ]]; then
+	err "Wrong ssh key type. Allowed type dsa, ecdsa, ed25519 or rsa."
+	exit 1
+      fi
+      flg_k_args+=("-t ${2}") 
+      shift 2
+      continue ;;
+    '-n' | '--name')
+      flg_n_hostname="${2}"
+      flg_n_args+=("--set-hostname ${2}")
+      shift 2
+      continue ;;
+    '-q' | '--quiet')
+      if [[ $verbose -eq 0 ]]; then
+	quiet="true"
+      else
+    	err "${vq_err_msg}"
+    	exit 1
+      fi
+      shift
+      continue ;;
+    '-v' | '--verbose')
+      if [[ -z $quiet ]]; then
+	if [[ $verbose -lt 4 ]]; then		
+    	  verbose=$(( verbose + 1 ))
+    	else
+    	  err "Too many v's, max is 4."
+    	  exit 1
+        fi
+      else
+    	err "${vq_err_msg}"
+    	exit 1
+      fi
+      shift
+      continue ;;
+    '--')
+      shift
+      break ;;
+    *)
+      err "Internal error!\n"
+      exit 1 ;;
+  esac
 done
 
-echo "- - - - - -  - VAR display - - - - -  -"
-echo "${A_FLG}"
-echo "${K_BITS}"
-echo "${K_FILE}"
-echo "${K_TYPE}"
-echo "${N_FLG}"	
-echo "${Q_FLG}"	
-echo "${V_FLG}"
-echo "- - - - - -  - VAR display - - - - -  -"
-
-
-
-
-
-
-
-
-
-
-
-
-    
-    
+# Execution:
+[[ -n $flg_k_type ]] && generate_key
+[[ -n $flg_n_hostname ]] && set_hostname
