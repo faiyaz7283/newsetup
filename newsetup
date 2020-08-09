@@ -57,7 +57,7 @@ eval set -- "${temp}" && unset temp
 # Helpful: tput basic color guide
 # 0 = black, 1 = red, 2 = green, 3 = yellow
 # 4 = blue, 5 = magenta, 6 = cyan, 7 = white
-# More info and help with colors: unix.stackexchange.com/questions/269077
+# Mor info and help with colors: unix.stackexchange.com/questions/269077
 #
 # Arguments:
 #   1 <number|hyphen>     Any number from 0-7, or higher based on terminal.
@@ -311,8 +311,7 @@ set_hostname() {
 }
 
 ################################################################################
-# Print the help menu using HEREDOC and cat to capture multi-line string and
-# preserve white space.
+# Print usage with HEREDOC and cat to capture multi-line with whitespace.
 #
 # Arguments:
 #   1 <number> Exit status code.
@@ -325,44 +324,46 @@ usage() {
   name_gaps="$(printf "%${#prg_name}s")"
   cat << EOS
 $(print_group 3 "usage:")
-$(print_group - " ${prg_name} " 6 "[ -h | --help ] [ -k | --keygen <type> ]")
-$(print_group - " $name_gaps " 6 "[ --bits <bits> ] [ -n | --name <name> ]")
-$(print_group - " $name_gaps " 6 "[ -q | --quiet ] [ -v | --verbose ]")
-$(print_group - " $name_gaps " 6 "[ --dry-run ]")
+$(print_group - " ${prg_name} " 4 "[ -h | --help ] [ -k | --keygen <type> ]")
+$(print_group - " $name_gaps " 4 "[ --bits <bits> ] [ -n | --name <name> ]")
+$(print_group - " $name_gaps " 4 "[ -q | --quiet ] [ -v | --verbose ]")
+$(print_group - " $name_gaps " 4 "[ --dry-run ]")
 
 $(print_group 3 descriptions:)
-$(print_group - " A script to automate setting up hostname and generate ssh key.")
+$(print_group - " A script for generating ssh key and setting up a hostname.")
 
 $(print_group 3 options:)
-$(print_group 5 " -h, --help     " - "        " - "Show this usage menu.")
-$(print_group 5 " -k, --keygen   " 5 " <type> " - "Generate ssh keys via ssh-kegen. Types: dsa, ecdsa, ed25519, rsa.")
-$(print_group 5 "     --bits     " 5 " <bits> " - "Optional: Specify <bits> for rsa or ecdsa keys.")
-$(print_group - "                " - "        " - "See examples section below for more detail.")
-$(print_group 5 " -n, --name     " 5 " <name> " - "Setup a new hostname via hostnamectl and /etc/hosts file.")
-$(print_group - "                " - "        " - "If print_groupoud-init is setup, /etc/print_groupoud/print_groupoud.cfg file will be modified.")
-$(print_group 5 " -q, --quiet    " - "        " - "Silence all output.")
-$(print_group 5 " -v, --verbose  " - "        " - "Increase verbosity by adding one or more. Up to 4 is allowed.")
-$(print_group 5 "     --dry-run  " - "        " - "Dry-run mode to safely test what will be executed.")
+$(print_group 4 " -h, --help     " - "        " - "Show this usage menu.")
+$(print_group 4 " -k, --keygen   " 6 " <type> " - "Generate ssh keys. Types: dsa, ecdsa, ed24419 or rsa.")
+$(print_group - "                " - "        " - "Key will be generated in ~/.ssh dir, with empty passphrase.")
+$(print_group 4 "     --bits     " 6 " <bits> " - "Optional: Specify <bits> for rsa or ecdsa keys.")
+$(print_group - "                " - "        " - "See examples section below for more details.")
+$(print_group 4 " -n, --name     " 6 " <name> " - "Setup a hostname.")
+$(print_group 4 " -q, --quiet    " - "        " - "Silence all output.")
+$(print_group 4 " -v, --verbose  " - "        " - "Increase verbosity by adding one or more, max 4.")
+$(print_group 4 "     --dry-run  " - "        " - "Dry-run mode to safely test what will be executed.")
 
 $(print_group 3 examples:)
-$(print_group 6 " - Generate ssh key. Key will be placed in the ~/.ssh dir, with default settings.")
-$(print_group 6 "   Prints the public key on stdout after success (except when -q option is used).")
-$(print_group 7 "   Create rsa key.")
+$(print_group - " Generate ssh key of type dsa, ecdsa, ed25519 or rsa.")
+$(print_group 5 "   # Create rsa key.")
 $(print_group 2 "   ./${prg_name} -k rsa")
-$(print_group 7 "   Create ecdsa key and specify a bit size")
+
+$(print_group 5 "   # Create ecdsa key and specify a bit size.")
 $(print_group 2 "   ./${prg_name} --keygen ecdsa --bits 521")
-$(print_group 7 "   Create dsa key.")
+
+$(print_group 5 "   # Create dsa key.")
 $(print_group 2 "   ./${prg_name} -k dsa")
 
-$(print_group 6 " - Setup hostname.")
+$(print_group - " Setup hostname.")
+$(print_group 5 "   # Using short form.")
 $(print_group 2 "   ./${prg_name} -n new_hostname")
+
+$(print_group 5 "   # Using long form.")
 $(print_group 2 "   ./${prg_name} --name new_hostname")
 
-$(print_group 6 " - Use all options at once.")
+$(print_group - " Practical use-case.")
+$(print_group 5 "   # Generate an ecdsa key with 521 bits and setup a hostname.")
 $(print_group 2 "   ./${prg_name} -k ecdsa --bits 521 -n some_server")
-
-$(print_group 6 " - Use dry-run.")
-$(print_group 2 "   ./${prg_name} -k rsa --bits 3072 -n some_server --dry-run")
 EOS
   # This help menu generally presented due to user error or misuse of the
   # program.  So return exit 1 status by default. Also allow the ability to
