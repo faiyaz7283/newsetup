@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-
-# Set script to follow strict rules.
-# The set command have multiple use cases. Please see the link to understand all
-# use cases: gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
-#
-# NOTE: '-' before options means to turn on that feature while a '+' means to
-# turn off that feature.
-#
-# Some useful options:
-# -e          Exit script immediately when a command hits non-zero status. 
-# -u          Using unset variables will error and immediately exit the script.
-# -x          Debugger mode. 
-# -o pipefail By default, the return status of the last command in a pipeline is
-#             returned. With this option set, any non-zero return status from
-#             within the pipeline will be returned.
 set -euo pipefail
 
 #-------------------------------------------------------------------------------
@@ -23,18 +8,14 @@ set -euo pipefail
 flg_k_type=""
 flg_k_args=( )
 flg_n_hostname=""
-flg_n_args=( )
 dry_run=0
 quiet=""
 verbose=0
 vq_err_msg="Error, both -q and -v flags given. Please use one or the other."
 
-# IMPORTANT:
-# Mac uses the BSD getopt by default - which is a separate program than the GNU
-# getopt used here.  In order for this script to work on Mac OS - make sure the
+# IMPORTANT: In order for this script to work on Mac OS - make sure the
 # getopt points to a GNU getopt instead of BSD.
-# brew install gnu-getopt and follow onscreen instruction for correct setup.
-opts_long="bits:,dry-run,help,keygen:,name:,quiet,verbose"
+opts_long="bits:,debug,dry-run,help,keygen:,name:,quiet,verbose"
 opts_short="hk:n:qv"
 prg_name=$(basename "$0")
 temp=$(getopt -n "${prg_name}" -l "$opts_long" -o "$opts_short" -- "${@:-}")   
@@ -53,11 +34,11 @@ eval set -- "${temp}" && unset temp
 #-------------------------------------------------------------------------------
 
 ################################################################################
-# Allow ability to add colors to output.
+# Add colors to output.
 # Helpful: tput basic color guide
 # 0 = black, 1 = red, 2 = green, 3 = yellow
 # 4 = blue, 5 = magenta, 6 = cyan, 7 = white
-# Mor info and help with colors: unix.stackexchange.com/questions/269077
+# More info and help with colors: unix.stackexchange.com/questions/269077
 #
 # Arguments:
 #   1 <number|hyphen>     Any number from 0-7, or higher based on terminal.
@@ -102,17 +83,21 @@ _cl() {
 #    Exit status 1, if uneven number of arguments given.
 ################################################################################
 _cl_multi() {
-  count=$#
-  
+  local count=$#
+
   if [[ $(( count % 2 )) -ne 0 ]]; then
     err "Only even number of arguments is valid, $count was given."
     exit 1
   fi
 
   while [[ $count -gt 0 ]]; do
-    _cl "$1" "${2}"
+    _cl $1 "${2}"
     shift 2
-    (( count-=2 ))
+    # NOTE: using just an arithmetic expression ex (( count-=2 )), when the
+    # value returns 0 - it evaluates as a false expression and returns an exit
+    # status of 1. This will cause the script to terminate prematurely. So to
+    # prevent that, assign the arithmetic to the variable instead.
+    count=$(( count-=2 ))
   done
 }
 
@@ -130,10 +115,10 @@ _cl_multi() {
 #   Writes to stderr
 ################################################################################
 err() {
-  dt="[$(date +'%Y-%m-%dT%H:%M:%S%z')]"
-  fn_ln="[${FUNCNAME[1]}:${BASH_LINENO[0]}]"  
-  detail_msg=$(_cl_multi 7 "${dt}" 3 "${fn_ln}" 1 "${1}")
-  msg=$(_cl 1 "${1}")
+  local dt="[$(date +'%Y-%m-%dT%H:%M:%S%z')]"
+  local fn_ln="[${FUNCNAME[1]}:${BASH_LINENO[0]}]"  
+  local detail_msg=$(_cl_multi 7 "${dt}" 3 "${fn_ln}" 1 "${1}")
+  local msg=$(_cl 1 "${1}")
   if [[ $verbose -gt 0 ]]; then
     print_line  "${detail_msg}" >&2
   else
@@ -163,8 +148,8 @@ generate_key() {
   local cmds=( )
 
   # Setup the file name
-  ssh_dir="${HOME}/.ssh_test"
-  key_file="${ssh_dir}/id_${flg_k_type}"
+  local ssh_dir="${HOME}/.ssh_test"
+  local key_file="${ssh_dir}/id_${flg_k_type}"
 
   print_heading "Generating ssh keys via ssh-keygen..."
 
@@ -211,7 +196,7 @@ get_verbose() {
 ################################################################################
 print_group() {
   if [[ -z $quiet ]]; then
-    count=$#
+    local count=$#
     
     if [[ $count -eq 1 ]]; then
       _cl - "${1}"
@@ -222,7 +207,7 @@ print_group() {
 }
 
 ################################################################################
-# Print a heading to stdout, unless --quiet mode is present.
+# Print a heading to stdout.
 #
 # Arguments:
 #   1 <string>
@@ -234,7 +219,7 @@ print_heading() {
 }
 
 ################################################################################
-# Print a single message line to stdout, unless --quiet mode is present.
+# Print a single message line to stdout.
 #
 # Arguments:
 #   1 <string>
@@ -334,36 +319,37 @@ $(print_group - " A script for generating ssh key and setting up a hostname.")
 
 $(print_group 3 options:)
 $(print_group 4 " -h, --help     " - "        " - "Show this usage menu.")
-$(print_group 4 " -k, --keygen   " 6 " <type> " - "Generate ssh keys. Types: dsa, ecdsa, ed24419 or rsa.")
+$(print_group 4 " -k, --keygen   " 6 " <type> " - "Generate ssh keys. Types: dsa, ecdsa, ed25519 or rsa.")
 $(print_group - "                " - "        " - "Key will be generated in ~/.ssh dir, with empty passphrase.")
 $(print_group 4 "     --bits     " 6 " <bits> " - "Optional: Specify <bits> for rsa or ecdsa keys.")
 $(print_group - "                " - "        " - "See examples section below for more details.")
 $(print_group 4 " -n, --name     " 6 " <name> " - "Setup a hostname.")
 $(print_group 4 " -q, --quiet    " - "        " - "Silence all output.")
 $(print_group 4 " -v, --verbose  " - "        " - "Increase verbosity by adding one or more, max 4.")
+$(print_group 4 "     --debug    " - "        " - "Turn on debug mode.")
 $(print_group 4 "     --dry-run  " - "        " - "Dry-run mode to safely test what will be executed.")
 
 $(print_group 3 examples:)
 $(print_group - " Generate ssh key of type dsa, ecdsa, ed25519 or rsa.")
-$(print_group 5 "   # Create rsa key.")
-$(print_group 2 "   ./${prg_name} -k rsa")
+$(print_group 4 "   # Create rsa key.")
+$(print_group 6 "   ./${prg_name} -k rsa")
 
-$(print_group 5 "   # Create ecdsa key and specify a bit size.")
-$(print_group 2 "   ./${prg_name} --keygen ecdsa --bits 521")
+$(print_group 4 "   # Create ecdsa key and specify a bit size.")
+$(print_group 6 "   ./${prg_name} --keygen ecdsa --bits 521")
 
-$(print_group 5 "   # Create dsa key.")
-$(print_group 2 "   ./${prg_name} -k dsa")
+$(print_group 4 "   # Create dsa key.")
+$(print_group 6 "   ./${prg_name} -k dsa")
 
 $(print_group - " Setup hostname.")
-$(print_group 5 "   # Using short form.")
-$(print_group 2 "   ./${prg_name} -n new_hostname")
+$(print_group 4 "   # Using short form.")
+$(print_group 6 "   ./${prg_name} -n new_hostname")
 
-$(print_group 5 "   # Using long form.")
-$(print_group 2 "   ./${prg_name} --name new_hostname")
+$(print_group 4 "   # Using long form.")
+$(print_group 6 "   ./${prg_name} --name new_hostname")
 
 $(print_group - " Practical use-case.")
-$(print_group 5 "   # Generate an ecdsa key with 521 bits and setup a hostname.")
-$(print_group 2 "   ./${prg_name} -k ecdsa --bits 521 -n some_server")
+$(print_group 4 "   # Generate an ecdsa key with 521 bits and setup a hostname.")
+$(print_group 6 "   ./${prg_name} -k ecdsa --bits 521 -n some_server")
 EOS
   # This help menu generally presented due to user error or misuse of the
   # program.  So return exit 1 status by default. Also allow the ability to
@@ -376,6 +362,10 @@ EOS
 #-------------------------------------------------------------------------------
 while true; do
   case "$1" in
+    '--debug')
+      set -x
+      shift
+      continue ;;
     '--dry-run')
       dry_run=1
       shift
@@ -398,7 +388,6 @@ while true; do
       continue ;;
     '-n' | '--name')
       flg_n_hostname="${2}"
-      flg_n_args+=("--set-hostname ${2}")
       shift 2
       continue ;;
     '-q' | '--quiet')
