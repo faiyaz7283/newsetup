@@ -1,29 +1,30 @@
-sudo: true
+# https://docs.travis-ci.com/user/languages/minimal-and-generic/
+language: minimal
 
-language: bash
+arch:
+  - amd64
+  - ppc64le
+  - s390x
+  - arm64
 
 os:
-- linux
+  - linux
+  - osx
 
-env:
-  - BASHVER=
-  - BASHVER=3.2
-  - BASHVER=4.0
-  - BASHVER=4.1
-  - BASHVER=4.2
-  - BASHVER=4.3
-  - BASHVER=4.4
-  - BASHVER=5
-
-matrix:
-  include:
+jobs:
+  allow_failures:
     - os: osx
 
-services:
-  - docker
+addons:
+  apt:
+    packages: bats-core
+    update: true
+  homebrew:
+    packages: bats-core
+    update: true
 
 script:
-  - ./libs/bin/bats -Tr tests
+  - bats -Tr tests
 
 branches:
   only:
