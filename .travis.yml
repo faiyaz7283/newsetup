@@ -1,29 +1,56 @@
 # https://docs.travis-ci.com/user/languages/minimal-and-generic/
-language: minimal
+language: shell
 
 arch:
   - amd64
+  - arm64  
   - ppc64le
   - s390x
-  - arm64
-
+  
 os:
   - linux
   - osx
+  
+dist: focal
+
+osx_image: xcode12
 
 jobs:
+  include:
+    - dist: bionic
+      arch: amd64
+    - dist: bionic
+      arch: arm64
+    - dist: bionic
+      arch: ppc64le
+    - dist: bionic
+      arch: s390x
+    - dist: xenial
+      arch: amd64
+    - dist: xenial
+      arch: arm64
+    - dist: xenial
+      arch: ppc64le
+    - dist: xenial
+      arch: s390x
   allow_failures:
     - os: osx
-
+      
 addons:
   apt:
-    packages: bats-core
-    update: true
+    packages:
+      - shellcheck
   homebrew:
-    packages: bats-core
     update: true
+    packages:
+      - bats-core
+      - shellcheck
+  
+before_install:
+  - scripts/install_bats
 
 script:
+  - shellcheck newsetup
   - bats -Tr tests
 
 branches:

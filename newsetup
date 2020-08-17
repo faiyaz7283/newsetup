@@ -51,21 +51,19 @@ _cl() {
   # Declare and assign separately to avoid masking return values
   local cl_output
   cl_output=$([[ $(tput colors) -ge 8 ]] && echo 1 || echo 0)
-  local strng="${2}"
-  local s="%s"
 
-  if [[ $strng == *"\n" ]]; then
-    # removes the last 2 characters from the $strng
-    strng="${strng%??}"
-    s="${s}\n"
+  if [[ $2 == *"\n" ]]; then
+    strng=$(printf "%s\n" "${2%??}")
+  else
+    strng=$(printf "%s" "${2}")
   fi
   
-  if [[ $cl_output -eq 0 || $1 == "-" ]]; then
-    printf "$s" "${strng}"
+  if [[ $cl_output -eq 0 || $1 == "-" ]]; then    
+    printf '%s' "$strng"
   else
     tput setaf "$1"
     [[ ${3:-} == "1" ]] && tput bold
-    printf "$s" "${strng}"
+    printf '%s' "$strng"
     tput sgr0
   fi
 }
@@ -91,7 +89,7 @@ _cl_multi() {
   fi
 
   while [[ $count -gt 0 ]]; do
-    _cl $1 "${2}"
+    _cl "$1" "${2}"
     shift 2
     # NOTE: using just an arithmetic expression ex (( count-=2 )), when the
     # value returns 0 - it evaluates as a false expression and returns an exit
@@ -115,10 +113,15 @@ _cl_multi() {
 #   Writes to stderr
 ################################################################################
 err() {
-  local dt="[$(date +'%Y-%m-%dT%H:%M:%S%z')]"
-  local fn_ln="[${FUNCNAME[1]}:${BASH_LINENO[0]}]"  
-  local detail_msg=$(_cl_multi 7 "${dt}" 3 "${fn_ln}" 1 "${1}")
-  local msg=$(_cl 1 "${1}")
+  local dt
+  local fn_ln
+  local detail_msg
+  local msg
+  dt="[$(date +'%Y-%m-%dT%H:%M:%S%z')]"
+  fn_ln="[${FUNCNAME[1]}:${BASH_LINENO[0]}]"  
+  detail_msg=$(_cl_multi 7 "${dt}" 3 "${fn_ln}" 1 "${1}")
+  msg=$(_cl 1 "${1}")
+
   if [[ $verbose -gt 0 ]]; then
     print_line  "${detail_msg}" >&2
   else
@@ -178,7 +181,7 @@ generate_key() {
 ################################################################################
 get_verbose() {
   if [[ $verbose -gt 0 ]]; then
-    printf 'v%.0s' $(seq $verbose)
+    printf 'v%.0s' "$(seq $verbose)"
   fi
 }
 
@@ -215,7 +218,7 @@ print_group() {
 #   Writes to stdout with new line at the end.
 ################################################################################
 print_heading() {
-  print_group 3 "${1}\n"
+  print_line 3 "${1}"
 }
 
 ################################################################################
@@ -228,7 +231,8 @@ print_heading() {
 #   Writes to stdout with no new line at the end.
 ################################################################################
 print_line() {
-  print_group "${@}\n"
+  print_group "$@"
+  echo ""
 }
 
 ################################################################################

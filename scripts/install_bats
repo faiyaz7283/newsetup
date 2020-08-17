@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $TRAVIS_OS_NAME == "linux" ]]; then
+  git clone https://github.com/bats-core/bats-core.git
+  cd bats-core
+  ./install.sh ~
+  rm -rf bats-core
+fi
