@@ -5,8 +5,9 @@ set -euo pipefail
 # Variables
 #-------------------------------------------------------------------------------
 
-flg_k_type=""
 flg_k_args=( )
+flg_k_dir="${HOME}/.ssh"
+flg_k_type=""
 flg_n_hostname=""
 dry_run=0
 quiet=""
@@ -15,7 +16,7 @@ vq_err_msg="Error, both -q and -v flags given. Please use one or the other."
 
 # IMPORTANT: In order for this script to work on Mac OS - make sure the
 # getopt points to a GNU getopt instead of BSD.
-opts_long="bits:,debug,dry-run,help,keygen:,name:,quiet,verbose"
+opts_long="bits:,debug,dry-run,dir:,help,keygen:,name:,quiet,verbose"
 opts_short="hk:n:qv"
 prg_name=$(basename "$0")
 temp=$(getopt -n "${prg_name}" -l "$opts_long" -o "$opts_short" -- "${@:-}")   
@@ -135,7 +136,7 @@ err() {
 # be created. Key name will be id_${type} and passphrase will be empty. 
 #
 # Globals:
-#   HOME   
+#   flg_k_dir
 #   flg_k_type 
 #   flg_k_args 
 # Outputs:
@@ -146,13 +147,22 @@ generate_key() {
   if [[ -z $flg_k_type ]]; then
     err "Missing ssh key type. Use -k or --key flag to set one."
     exit 1
+  elif ! [[ $flg_k_type =~ ^(dsa|ecdsa|ed25519|rsa)$ ]]; then
+    err "Wrong ssh key type. Allowed type dsa, ecdsa, ed25519 or rsa."
+    exit 1
+  fi
+
+  if [[ -z $flg_k_dir ]]; then
+    err "Missing ssh directory. Use --dir flag to set one."
+    exit 1
+  elif [[ ! -d $flg_k_dir ]]; then
+    err "${flg_k_dir} is not a directory. Make sure directory exist."
+    exit 1
   fi
 
   local cmds=( )
-
-  # Setup the file name
-  local ssh_dir="${HOME}/.ssh_test"
-  local key_file="${ssh_dir}/id_${flg_k_type}"
+  local key_file
+  key_file="${flg_k_dir}/id_${flg_k_type}"
 
   print_heading "Generating ssh keys via ssh-keygen..."
 
@@ -160,11 +170,6 @@ generate_key() {
   if [[ -f ${key_file} ]]; then
     print_line "${flg_k_type} key already exist, doing nothing."
   else
-    # Make sure the .ssh dir exist
-    if [[ ! -d ${ssh_dir} ]]; then
-      cmds+=("mkdir -p ${ssh_dir}")
-    fi
-
     # Add -f file and add -N flag to prevent passphrase prompt
     cmds+=("ssh-keygen ${flg_k_args[*]} -f ${key_file} -N \"\"")
     run_cmds "${cmds[@]}"
@@ -325,13 +330,14 @@ $(print_group 3 options:)
 $(print_group 4 " -h, --help     " - "        " - "Show this usage menu.")
 $(print_group 4 " -k, --keygen   " 6 " <type> " - "Generate ssh keys. Types: dsa, ecdsa, ed25519 or rsa.")
 $(print_group - "                " - "        " - "Key will be generated in ~/.ssh dir, with empty passphrase.")
+$(print_group 4 "     --dir      " 6 " <dir>  " - "Directory to store generated ssh keys. Default is ~/.ssh.")
 $(print_group 4 "     --bits     " 6 " <bits> " - "Optional: Specify <bits> for rsa or ecdsa keys.")
 $(print_group - "                " - "        " - "See examples section below for more details.")
 $(print_group 4 " -n, --name     " 6 " <name> " - "Setup a hostname.")
 $(print_group 4 " -q, --quiet    " - "        " - "Silence all output.")
-$(print_group 4 " -v, --verbose  " - "        " - "Increase verbosity by adding one or more, max 4.")
+$(print_group 4 " -v, --verbose  " - "        " - "Increase verbosity. Max allowed 4.")
 $(print_group 4 "     --debug    " - "        " - "Turn on debug mode.")
-$(print_group 4 "     --dry-run  " - "        " - "Dry-run mode to safely test what will be executed.")
+$(print_group 4 "     --dry-run  " - "        " - "Dry-run mode.")
 
 $(print_group 3 examples:)
 $(print_group - " Generate ssh key of type dsa, ecdsa, ed25519 or rsa.")
@@ -370,6 +376,10 @@ while true; do
       set -x
       shift
       continue ;;
+    '--dir')
+      flg_k_dir="${2}"
+      shift 2
+      continue ;;
     '--dry-run')
       dry_run=1
       shift
@@ -383,10 +393,6 @@ while true; do
       break ;;
     '-k' | '--keygen')
       flg_k_type="${2}"
-      if ! [[ $flg_k_type =~ ^(dsa|ecdsa|ed25519|rsa)$ ]]; then
-	err "Wrong ssh key type. Allowed type dsa, ecdsa, ed25519 or rsa."
-	exit 1
-      fi
       flg_k_args+=("-t ${2}") 
       shift 2
       continue ;;
@@ -427,5 +433,5 @@ while true; do
 done
 
 # Execution:
-[[ -n $flg_k_type ]] && generate_key
+[[ -n $flg_k_dir && -n $flg_k_type ]] && generate_key
 [[ -n $flg_n_hostname ]] && set_hostname
