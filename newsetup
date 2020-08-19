@@ -14,7 +14,7 @@ quiet=""
 verbose=0
 vq_err_msg="Error, both -q and -v flags given. Please use one or the other."
 
-# IMPORTANT: In order for this script to work on Mac OS - make sure the
+# IMPORTANT: In order for this script to work on macOS - make sure the
 # getopt points to a GNU getopt instead of BSD.
 opts_long="bits:,debug,dry-run,dir:,help,keygen:,name:,quiet,verbose"
 opts_short="hk:n:qv"
@@ -291,7 +291,7 @@ set_hostname() {
     print_heading "Setting up hostname via hostnamectl..."
     cmds+=("sudo hostnamectl set-hostname ${flg_n_hostname}")
   elif command -v scutil &> /dev/null; then
-    # osx
+    # macOS
     print_heading "Setting up hostname via scutil..."
     cmds+=("sudo scutil --set ComputerName ${flg_n_hostname}")
     cmds+=("sudo scutil --set LocalHostName ${flg_n_hostname}")
@@ -423,6 +423,9 @@ while true; do
       fi
       shift
       continue ;;
+    '-V' | '--version')
+      get_version
+      break ;;
     '--')
       shift
       break ;;
