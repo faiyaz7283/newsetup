@@ -5,6 +5,7 @@ set -euo pipefail
 # Variables
 #-------------------------------------------------------------------------------
 
+flg_h=""
 flg_k_args=( )
 flg_k_dir="${HOME}/.ssh"
 flg_k_type=""
@@ -18,7 +19,10 @@ vq_err_msg="Error, both -q and -v flags given. Please use one or the other."
 # getopt points to a GNU getopt instead of BSD.
 opts_long="bits:,debug,dry-run,dir:,help,keygen:,name:,quiet,verbose"
 opts_short="hk:n:qv"
-prg_name=$(basename "$0")
+# NOTE: We can use ${BASH_SOURCE[0]} or $(basename "$0") to get script name
+# but then calling the script with curl or wget returns a file descriptor
+# number.
+prg_name="newsetup"
 temp=$(getopt -n "${prg_name}" -l "$opts_long" -o "$opts_short" -- "${@:-}")   
 
 # switch temp -> $@ (positional arguments) and destroy the temp var.
@@ -236,8 +240,10 @@ print_heading() {
 #   Writes to stdout with no new line at the end.
 ################################################################################
 print_line() {
-  print_group "$@"
-  echo ""
+  if [[ -z $quiet ]]; then
+    print_group "$@"
+    echo ""
+  fi
 }
 
 ################################################################################
@@ -293,8 +299,6 @@ set_hostname() {
   elif command -v scutil &> /dev/null; then
     # macOS
     print_heading "Setting up hostname via scutil..."
-    cmds+=("sudo scutil --set ComputerName ${flg_n_hostname}")
-    cmds+=("sudo scutil --set LocalHostName ${flg_n_hostname}")
     cmds+=("sudo scutil --set HostName ${flg_n_hostname}")
   else
     err "Unable to find a program to change computer Hostname."
@@ -315,8 +319,9 @@ set_hostname() {
 #   1 by default, or the status code passed by argument 1.
 ################################################################################
 usage() {
-  name_gaps="$(printf "%${#prg_name}s")"
-  cat << EOS
+  if [[ -z $quiet ]]; then
+    name_gaps="$(printf "%${#prg_name}s")"
+    cat << EOS
 $(print_group 3 "usage:")
 $(print_group - " ${prg_name} " 4 "[ -h | --help ] [ -k | --keygen <type> ]")
 $(print_group - " $name_gaps " 4 "[ --bits <bits> ] [ -n | --name <name> ]")
@@ -361,10 +366,11 @@ $(print_group - " Practical use-case.")
 $(print_group 4 "   # Generate an ecdsa key with 521 bits and setup a hostname.")
 $(print_group 6 "   ./${prg_name} -k ecdsa --bits 521 -n some_server")
 EOS
-  # This help menu generally presented due to user error or misuse of the
-  # program.  So return exit 1 status by default. Also allow the ability to
-  # change the exit status in situation when the help menu is called correctly.
-  [[ -z $1 ]] && exit 1 || exit "$1"
+    # This help menu generally presented due to user error or misuse of the
+    # program.  So return exit 1 status by default. Also allow the ability to
+    # change the exit status in situation when the help menu is called correctly.
+    [[ -z $1 ]] && exit 1 || exit "$1"
+  fi
 }
 
 #-------------------------------------------------------------------------------
@@ -389,8 +395,9 @@ while true; do
       shift 2
       continue ;;
     '-h' | '--help')
-      usage 0
-      break ;;
+      flg_h="true"
+      shift
+      continue ;;
     '-k' | '--keygen')
       flg_k_type="${2}"
       flg_k_args+=("-t ${2}") 
@@ -423,9 +430,6 @@ while true; do
       fi
       shift
       continue ;;
-    '-V' | '--version')
-      get_version
-      break ;;
     '--')
       shift
       break ;;
@@ -436,5 +440,9 @@ while true; do
 done
 
 # Execution:
-[[ -n $flg_k_dir && -n $flg_k_type ]] && generate_key
-[[ -n $flg_n_hostname ]] && set_hostname
+if [[ -n $flg_h && $flg_h == "true" ]]; then
+  usage 0
+else
+  [[ -n $flg_k_dir && -n $flg_k_type ]] && generate_key
+  [[ -n $flg_n_hostname ]] && set_hostname
+fi

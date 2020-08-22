@@ -12,13 +12,12 @@ About
 ====
 
 This program is a simple script designed to handle a couple of trivial
-tasks. Tasks that, for many use cases, mandatory to be performed. The script
-helps setting up hostname and ssh keys quickly. A common use case is when
-building a cluster of node servers. Once the ssh keys and proper hostnames are
-there, each node can be accessed individually or in a group setting. To
-orchestrate any repetitive tasks after that could be done much quicker, for
-example, using ansible or similar tools.
-	  
+tasks. The script helps setting up hostname and ssh keys quickly, a common use
+case when building a cluster of node servers. Once the ssh keys and proper
+hostnames are there, each node can be accessed individually or in a group
+setting. To orchestrate any repetitive tasks after that could be done much
+quicker, for example, using ansible or similar tools.
+
 Backstory
 ====
 
@@ -27,6 +26,14 @@ generate ssh keys from each node by logging into each manually. For easy access
 within a local network, I also needed to set up the hostname for each. Since
 this is a pretty trivial but tedious task to repeat in the future, I created
 this script.
+
+System requirement
+====
+
+- **bash** - tested with 3.2, 4.4 and 5.
+- **gnu-getopt** - the getopt found on macOS will not work, you must install the
+  gnu-getopt. ``brew install gnu-getopt``
+
 
 Quick usage:
 ====
@@ -88,17 +95,15 @@ program to setup hostname.
 .. _hostnamectl: https://man7.org/linux/man-pages/man1/hostnamectl.1.html
 
 .. image:: /images/linux_hostname.gif?raw=true
-   :alt: hostname setup on linux machine.
+   :alt: hostname setup on linux.
    :align: center	 
 
-And running on a macOS, it will use `scutil`_ program to setup hostname. Keep
-in mind all three following names will be changed ComputerName, HostName and
-LocalHostName.
+And running on a macOS, it will use `scutil`_ program to setup hostname.
 
 .. _scutil: https://ss64.com/osx/scutil.html
 
-.. image:: /images/osx_hostname.gif?raw=true
-   :alt: hostname setup on osx machine.
+.. image:: /images/mac_hostname.gif?raw=true
+   :alt: hostname setup on macOS.
    :align: center	 
 
 
