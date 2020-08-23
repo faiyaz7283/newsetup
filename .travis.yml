@@ -9,7 +9,7 @@ arch:
   
 os:
   - linux
-  - osx
+#  - osx
   
 dist: focal
 
