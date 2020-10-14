@@ -32,7 +32,8 @@ System requirement
 
 - **bash** - tested with 3.2, 4.4 and 5.
 - **gnu-getopt** - the getopt found on macOS will not work, you must install the
-  gnu-getopt. ``brew install gnu-getopt``
+  gnu-getopt. ``brew install gnu-getopt``, and make sure the gnu-getopt is in
+  your path ahead of the existing BSD getopt.
 
 
 Quick usage:
@@ -46,42 +47,38 @@ Log into a node and setup a hostname and generate a 521 bits ecdsa ssh key.
    
   .. code-block:: bash
 
-     newsetup="https://raw.githubusercontent.com/faiyaz7283/newsetup/develop/newsetup"
-
      # Test with dry-run
-     bash <(curl -s "$newsetup") -k ecdsa --bits 521 -n machine01 --dry-run
+     bash <(curl -sL tiny.cc/new-setup) -n machine01 -k ecdsa --bits 521 --dry-run
 
      # Run the code
-     bash <(curl -s "$newsetup") -k ecdsa --bits 521 -n machine01
+     bash <(curl -sL tiny.cc/new-setup) -n machine01 -k ecdsa --bits 521
 
   wget
 
   .. code-block:: bash
 
-     newsetup="https://raw.githubusercontent.com/faiyaz7283/newsetup/develop/newsetup"
-
      # Test with dry-run
-     bash <(wget -O- "$newsetup" -o /dev/null) -k ecdsa --bits 521 -n machine01 --dry-run
+     bash <(wget tiny.cc/new-setup -o /dev/null -O -) -n machine01 -k ecdsa --bits 521 --dry-run
 
      # Run the code
-     bash <(wget -O- "$newsetup" -o /dev/null) -k ecdsa --bits 521 -n machine01
+     bash <(wget tiny.cc/new-setup -o /dev/null -O -) -n machine01 -k ecdsa --bits 521
 
 - Download the script and run manually:
 
   .. code-block:: bash
 
      # download via curl
-     curl https://raw.githubusercontent.com/faiyaz7283/newsetup/develop/newsetup -o newsetup
+     curl -L tiny.cc/new-setup -o newsetup
      # or wget
-     wget https://raw.githubusercontent.com/faiyaz7283/newsetup/develop/newsetup
+     wget tiny.cc/new-setup -O newsetup
 	  
      chmod +x newsetup
      
      # Test with dry-run
-     ./newsetup -k ecdsa --bits 521 -n machine01 --dry-run
+     ./newsetup -n machine01 -k ecdsa --bits 521 --dry-run
 
      # Run the code
-     ./newsetup -k ecdsa --bits 521 -n machine01
+     ./newsetup -n machine01 -k ecdsa --bits 521
 
 General usage
 ====
